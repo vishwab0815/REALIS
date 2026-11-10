@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>REALIS report · {{ r.evidence.original_name }}</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --text:#e6e8ee; --muted:#9aa3b2; --line:#2a2f3a;
+          --info:#6b7686; --low:#3d8bd9; --medium:#d9a23d; --high:#e0603b; --critical:#d6336c; --ok:#3fb27f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui, Segoe UI, sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:1100px; margin:0 auto; padding:32px 20px 64px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:17px; margin:32px 0 12px; }
+  .muted { color:var(--muted); } code { font-family:Consolas, monospace; font-size:12.5px; word-break:break-all; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:14px; }
+  .verdict { display:flex; gap:24px; align-items:center; }
+  .verdict .label { font-size:20px; font-weight:600; }
+  .bar { height:10px; border-radius:5px; background:linear-gradient(90deg,var(--ok),var(--medium),var(--critical)); position:relative; width:260px; }
+  .bar span { position:absolute; top:-4px; width:4px; height:18px; background:#fff; border-radius:2px; }
+  table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; font-weight:600; color:#111; }
+  .info{background:var(--info);color:#fff} .low{background:var(--low);color:#fff} .medium{background:var(--medium)}
+  .high{background:var(--high)} .critical{background:var(--critical);color:#fff}
+  .ok{color:var(--ok)} .bad{color:var(--critical)}
+  .analyzer header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .finding { margin:8px 0; } .finding .detail { color:var(--muted); margin-left:4px; }
+  .artifacts { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; margin-top:12px; }
+  figure { margin:0; } figure img { width:100%; border-radius:6px; border:1px solid var(--line); }
+  figcaption { color:var(--muted); font-size:12px; margin-top:4px; }
+  details summary { cursor:pointer; color:var(--muted); margin-top:8px; }
+  pre { white-space:pre-wrap; font-size:12px; color:var(--muted); }
+  ul.lim { color:var(--muted); margin:8px 0 0; padding-left:18px; }
+</style>
+</head>
+<body><main>
+  <h1>{{ r.modality|capitalize }} forensic report</h1>
+  <div class="muted">{{ r.tool|upper }} v{{ r.tool_version }} · generated {{ r.generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }} · case <code>{{ r.evidence.case_id }}</code></div>
+
+  <h2>Verdict</h2>
+  <div class="card">
+    <div class="verdict">
+      <div>
+        <div class="label">{{ r.verdict.label }}</div>
+        <div class="muted">AI generation {{ '%.0f'|format(r.verdict.ai_generation_probability * 100) }}% · editing/manipulation {{ '%.0f'|format(r.verdict.editing_probability * 100) }}%{% if r.verdict.decisive %} · driven by provenance-grade evidence{% endif %}</div>
+      </div>
+      <div class="bar"><span style="left:calc({{ r.verdict.manipulation_probability * 100 }}% - 2px)"></span></div>
+    </div>
+    <ul>{% for line in r.verdict.rationale %}<li>{{ line }}</li>{% endfor %}</ul>
+    <div class="muted">Scores are heuristic and not yet calibrated on a labelled dataset. Absence of evidence is not proof of authenticity.</div>
+    {% for note in r.notes %}<div class="muted">Note: {{ note }}</div>{% endfor %}
+  </div>
+
+  {% for label, path in r.overview.items() %}
+  <h2>{{ label }}</h2>
+  <div class="card"><figure><a href="{{ artifact_prefix }}{{ path }}" target="_blank"><img src="{{ artifact_prefix }}{{ path }}" alt="{{ label }}"></a></figure></div>
+  {% endfor %}
+
+  <h2>Evidence</h2>
+  <div class="card"><table>
+    <tr><th>Original name</th><td>{{ r.evidence.original_name }}</td></tr>
+    <tr><th>SHA-256</th><td><code>{{ r.evidence.sha256 }}</code></td></tr>
+    <tr><th>Size</th><td>{{ '{:,}'.format(r.evidence.size_bytes) }} bytes</td></tr>
+    <tr><th>Ingested</th><td>{{ r.evidence.ingested_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td></tr>
+    <tr><th>Integrity after analysis</th><td class="{{ 'ok' if r.integrity_verified else 'bad' }}">{{ 'Hash re-verified, evidence unchanged' if r.integrity_verified else 'HASH MISMATCH' }}</td></tr>
+    <tr><th>Custody log</th><td class="{{ 'ok' if r.custody_log_valid else 'bad' }}">{{ 'Hash chain intact' if r.custody_log_valid else 'CHAIN BROKEN' }}</td></tr>
+  </table></div>
+
+  <h2>Analyses</h2>
+  {% for a in r.results %}
+  <div class="card analyzer">
+    <header>
+      <strong>{{ a.analyzer }}</strong>
+      <span class="muted">
+        {% if a.status == 'ok' %}score {{ '%.2f'|format(a.score) if a.score is not none else 'n/a' }} · confidence {{ '%.2f'|format(a.confidence) }} · weight {{ a.weight }}
+        {% else %}{{ a.status }}: {{ a.error }}{% endif %} · {{ a.elapsed_ms }} ms
+      </span>
+    </header>
+    {% for f in a.findings %}
+      <div class="finding"><span class="badge {{ f.severity }}">{{ f.severity }}</span> {{ f.title }}<span class="detail">{{ f.detail }}</span></div>
+    {% endfor %}
+    {% if a.artifacts %}
+    <div class="artifacts">
+      {% for label, path in a.artifacts.items() %}
+      <figure><a href="{{ artifact_prefix }}{{ path }}" target="_blank"><img src="{{ artifact_prefix }}{{ path }}" alt="{{ label }}"></a><figcaption>{{ label }}</figcaption></figure>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if a.limitations %}<ul class="lim">{% for l in a.limitations %}<li>{{ l }}</li>{% endfor %}</ul>{% endif %}
+    {% set b = brief(a.data) %}
+    {% if b %}<details><summary>Technical data</summary><pre>{{ b|tojson(indent=2) }}</pre></details>{% endif %}
+  </div>
+  {% endfor %}
+
+  <h2>Score contributions</h2>
+  <div class="card"><table>
+    <tr><th>Analyzer</th><th>Score</th><th>Confidence</th><th>Weight</th><th>Log-odds</th></tr>
+    {% for c in r.verdict.contributions|sort(attribute='log_odds', reverse=true) %}
+    <tr><td>{{ c.analyzer }}</td><td>{{ c.score }}</td><td>{{ c.confidence }}</td><td>{{ c.weight }}</td><td>{{ '%+.3f'|format(c.log_odds) }}</td></tr>
+    {% endfor %}
+  </table></div>
+
+  <h2>Chain of custody</h2>
+  <div class="card"><table>
+    <tr><th>#</th><th>Time (UTC)</th><th>Actor</th><th>Action</th><th>Entry hash</th></tr>
+    {% for e in custody %}
+    <tr><td>{{ e.seq }}</td><td>{{ e.timestamp[:19] }}</td><td>{{ e.actor }}</td><td>{{ e.action }}</td><td><code>{{ e.entry_hash[:16] }}…</code></td></tr>
+    {% endfor %}
+  </table></div>
+</main></body>
+</html>

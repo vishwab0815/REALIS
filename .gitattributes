@@ -1,0 +1,2 @@
+# Store text files with LF in the repository, whatever the contributor's OS.
+* text=auto

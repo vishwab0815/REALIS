@@ -1,0 +1,62 @@
+[project]
+name = "realis"
+version = "0.3.0"
+description = "REALIS: Real-media Evidence, Authenticity & Lineage Intelligence System"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "opencv-python-headless>=4.10",
+    "pillow>=11.0",
+    "pillow-heif>=0.18",
+    # 0.38.1+ ships no win_amd64 wheel yet; relax once upstream publishes one.
+    "c2pa-python>=0.37,<=0.38.0",
+    "pydantic>=2.8",
+    "typer>=0.12",
+    "rich>=13.7",
+    "jinja2>=3.1",
+    # Learned detectors
+    "torch>=2.9",
+    "torchvision>=0.24",
+    "timm>=1.0",
+    "huggingface-hub>=0.25",
+    "safetensors>=0.4",
+    "yacs>=0.1.8",
+    # Web service
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "python-multipart>=0.0.12",
+    "transformers>=4.51",
+    "matplotlib>=3.9",
+]
+
+[project.scripts]
+realis = "realis.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "scikit-image>=0.24",
+    "httpx>=0.27",
+]
+
+# CUDA 13 wheels on Windows/Linux: required for Blackwell (sm_120) GPUs such as the
+# RTX 50 series, and they also run on CPU. macOS has no CUDA builds, so it uses PyPI.
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform != 'darwin'" }]
+torchvision = [{ index = "pytorch-cu130", marker = "sys_platform != 'darwin'" }]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/realis"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
