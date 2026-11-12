@@ -6,7 +6,11 @@ import pytest
 from PIL import Image
 from skimage import data
 
+from realis.common.provenance import _c2pa
 from realis.core.context import ImageContext
+
+# Some systems block the C2PA native library (e.g. Windows Smart App Control); then that check is skipped.
+C2PA_AVAILABLE = _c2pa()[1] is None
 
 
 def jpeg_bytes(arr: np.ndarray, quality: int) -> bytes:

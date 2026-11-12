@@ -1,6 +1,6 @@
 [project]
 name = "realis"
-version = "0.3.0"
+version = "0.4.0"
 description = "REALIS: Real-media Evidence, Authenticity & Lineage Intelligence System"
 requires-python = ">=3.12,<3.14"
 dependencies = [

@@ -16,6 +16,15 @@ JOB_WORKERS = int(os.environ.get("REALIS_JOB_WORKERS", "1"))  # one GPU: keep 1
 THIRD_PARTY_DIR = HOME / "third_party"
 CASES_DIR = Path(os.environ.get("REALIS_CASES", HOME / "cases"))
 
+# Hosted deployments. All off by default, so a local install behaves as before.
+# Shared code that every /api and /cases request must carry (header, ?key= or cookie).
+ACCESS_CODE = os.environ.get("REALIS_ACCESS_CODE", "")
+# Browser origins allowed to call the API, e.g. the Vercel site: comma-separated list and/or a regex.
+CORS_ORIGINS = [o.strip() for o in os.environ.get("REALIS_CORS_ORIGINS", "").split(",") if o.strip()]
+CORS_ORIGIN_REGEX = os.environ.get("REALIS_CORS_ORIGIN_REGEX", "") or None
+# Delete cases older than this many hours (0 = keep forever).
+RETENTION_HOURS = float(os.environ.get("REALIS_RETENTION_HOURS", "0"))
+
 # Upstream code for TruFor is fetched, not vendored: its licence restricts redistribution.
 TRUFOR_REPO = "https://github.com/grip-unina/TruFor"
 TRUFOR_SRC = THIRD_PARTY_DIR / "TruFor" / "test_docker" / "src"

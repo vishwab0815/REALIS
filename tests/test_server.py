@@ -1,11 +1,11 @@
 import time
 
 import pytest
-from fastapi.testclient import TestClient
-
 import video_fixtures as vf
 from audio_fixtures import recording, write_wav
 from conftest import jpeg_bytes
+from fastapi.testclient import TestClient
+
 from realis.audio import io
 from realis.server import create_app
 
@@ -134,3 +134,68 @@ def test_upload_limits(client):
     assert client.post("/api/jobs", files={"file": ("e.png", b"", "image/png")}).status_code == 400
     big = b"\0" * (2 * 1024 * 1024 + 1)
     assert client.post("/api/jobs", files={"file": ("big.mp4", big, "video/mp4")}).status_code == 413
+
+
+# --- hosted deployment: access code, CORS, retention ----------------------------
+
+@pytest.fixture
+def locked(tmp_path, web_dist):
+    app = create_app(tmp_path / "cases", warmup=False, web_dist=web_dist, access_code="s3cret",
+                     cors_origins=["https://realis.vercel.app"])
+    with TestClient(app) as c:
+        yield c
+
+
+def test_access_code_protects_api_and_files(locked, coffee):
+    assert locked.get("/api/health").json()["auth_required"] is True  # health stays open
+    assert locked.get("/api/cases").status_code == 401
+    assert locked.get("/api/cases", headers={"X-Access-Code": "wrong"}).status_code == 401
+    ok = {"X-Access-Code": "s3cret"}
+    r = locked.post("/api/analyze", headers=ok,
+                    files={"file": ("a.jpg", jpeg_bytes(coffee, 90), "image/jpeg")}, data={"deep": "false"})
+    assert r.status_code == 200, r.text
+    evidence = r.json()["urls"]["evidence"]
+    assert locked.get(evidence).status_code == 401
+    first = locked.get(evidence + "?key=s3cret")  # media elements cannot send headers
+    assert first.status_code == 200 and "realis_key" in first.headers.get("set-cookie", "")
+
+
+def test_cookie_lets_the_html_report_load_its_images(tmp_path, web_dist, coffee):
+    # TestClient is plain http, so the Secure cookie is not resent: check the cookie path directly.
+    app = create_app(tmp_path / "cases", warmup=False, web_dist=web_dist, access_code="s3cret")
+    with TestClient(app, base_url="https://testserver") as c:
+        r = c.post("/api/analyze", headers={"X-Access-Code": "s3cret"},
+                   files={"file": ("a.jpg", jpeg_bytes(coffee, 90), "image/jpeg")})
+        html = r.json()["urls"]["html"]
+        assert c.get(html + "?key=s3cret").status_code == 200
+        assert c.get(r.json()["urls"]["evidence"]).status_code == 200  # cookie only
+
+
+def test_cors_allows_only_the_configured_site(locked):
+    pre = {"Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "x-access-code"}
+    ok = locked.options("/api/jobs", headers={"Origin": "https://realis.vercel.app", **pre})
+    assert ok.status_code == 200 and ok.headers["access-control-allow-origin"] == "https://realis.vercel.app"
+    bad = locked.options("/api/jobs", headers={"Origin": "https://evil.example", **pre})
+    assert "access-control-allow-origin" not in bad.headers
+    denied = locked.get("/api/cases", headers={"Origin": "https://realis.vercel.app"})
+    assert denied.status_code == 401 and denied.headers["access-control-allow-origin"] == "https://realis.vercel.app"
+
+
+def test_retention_deletes_old_cases(tmp_path):
+    import os
+    import stat
+    import time
+
+    from realis.cases import prune
+
+    old, fresh = tmp_path / "CASE-old", tmp_path / "CASE-new"
+    for case in (old, fresh):
+        (case / "evidence").mkdir(parents=True)
+        f = case / "evidence" / "x.jpg"
+        f.write_bytes(b"x")
+        os.chmod(f, stat.S_IREAD)  # evidence is read-only
+    past = time.time() - 7200
+    os.utime(old, (past, past))
+    assert prune(tmp_path, max_age_hours=1) == 1
+    assert not old.exists() and fresh.exists()
+    assert prune(tmp_path, max_age_hours=0) == 0  # disabled

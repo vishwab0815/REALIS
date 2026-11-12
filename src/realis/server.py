@@ -15,6 +15,7 @@ API
 
 from __future__ import annotations
 
+import hmac
 import logging
 import re
 import threading
@@ -23,18 +24,25 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from realis import DISPLAY_NAME, FULL_NAME, TOOL_NAME, __version__, settings
 from realis.audio import io as audio_io
-from realis.cases import CaseIndex
+from realis.cases import CaseIndex, prune
 from realis.core.analyzer import analyzers_for
 from realis.jobs import JobManager
 from realis.ml import antideepfake, commfor, runtime, trufor
-from realis.pipeline import AUDIO_SUFFIXES, IMAGE_SUFFIXES, SUPPORTED_SUFFIXES, VIDEO_SUFFIXES, analyze_media
+from realis.pipeline import (
+    AUDIO_SUFFIXES,
+    IMAGE_SUFFIXES,
+    SUPPORTED_SUFFIXES,
+    VIDEO_SUFFIXES,
+    analyze_media,
+)
 from realis.video import io as video_io
 
 log = logging.getLogger("realis.server")
@@ -65,6 +73,10 @@ def create_app(
     warmup: bool = True,
     web_dist: Path = settings.WEB_DIST,
     max_upload_mb: int = settings.MAX_UPLOAD_MB,
+    access_code: str = settings.ACCESS_CODE,
+    cors_origins: list[str] | None = None,
+    cors_origin_regex: str | None = settings.CORS_ORIGIN_REGEX,
+    retention_hours: float = settings.RETENTION_HOURS,
 ) -> FastAPI:
     cases_dir = cases_dir.resolve()
     cases_dir.mkdir(parents=True, exist_ok=True)
@@ -76,12 +88,14 @@ def create_app(
 
     def run(path: Path, name: str, deep: bool, progress) -> dict[str, Any]:
         report, _ = analyze_media(path, cases_dir, None, None, name, skip or None, deep=deep, progress=progress)
+        prune(cases_dir, retention_hours)
         return index.payload(report)
 
     jobs = JobManager(run, workers=settings.JOB_WORKERS)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        prune(cases_dir, retention_hours)
         if warmup:
             threading.Thread(target=_warmup, args=(set(skip),), daemon=True).start()
         yield
@@ -89,6 +103,34 @@ def create_app(
 
     app = FastAPI(title=DISPLAY_NAME, description=FULL_NAME, version=__version__, lifespan=lifespan)
     app.mount("/cases", StaticFiles(directory=cases_dir), name="cases")
+
+    @app.middleware("http")
+    async def require_access_code(request: Request, call_next):
+        """With an access code configured, every /api (except health) and /cases request must carry it.
+
+        API calls send it as a header; media elements cannot, so /cases also accepts
+        ?key= and, after one such request, a first-party cookie (lets the HTML report
+        load its own images when opened in a new tab).
+        """
+        path = request.url.path
+        protected = path.startswith("/cases/") or (path.startswith("/api/") and path != "/api/health")
+        if not access_code or not protected or request.method == "OPTIONS":
+            return await call_next(request)
+        supplied = (request.headers.get("x-access-code") or request.query_params.get("key")
+                    or request.cookies.get("realis_key") or "")
+        if not hmac.compare_digest(supplied.encode(), access_code.encode()):
+            return JSONResponse({"detail": "Access code required"}, status_code=401)
+        response = await call_next(request)
+        if path.startswith("/cases/") and request.query_params.get("key"):
+            response.set_cookie("realis_key", access_code, httponly=True, secure=True, samesite="lax", path="/cases")
+        return response
+
+    # Added last so it wraps everything: preflights and 401s get CORS headers too.
+    origins = settings.CORS_ORIGINS if cors_origins is None else cors_origins
+    if origins or cors_origin_regex:
+        app.add_middleware(CORSMiddleware, allow_origins=origins, allow_origin_regex=cors_origin_regex,
+                           allow_methods=["GET", "POST"], allow_headers=["X-Access-Code", "Range"],
+                           expose_headers=["Content-Range", "Accept-Ranges"])
 
     async def receive(file: UploadFile) -> tuple[Path, str, int]:
         """Stream an upload to a temp file, enforcing type and size limits."""
@@ -121,6 +163,7 @@ def create_app(
             "name": DISPLAY_NAME,
             "full_name": FULL_NAME,
             "version": __version__,
+            "auth_required": bool(access_code),
             "runtime": runtime.device_info(),
             "ffmpeg": audio_io.available(),
             "models": {

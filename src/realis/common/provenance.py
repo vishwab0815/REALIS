@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
+from functools import cache
+from types import ModuleType
 from typing import Any
-
-import c2pa
 
 from realis.core.analyzer import Analyzer, register
 from realis.core.context import MediaContext
@@ -19,6 +19,20 @@ EDIT_ACTIONS = {
     "c2pa.edited", "c2pa.cropped", "c2pa.filtered", "c2pa.color_adjustments", "c2pa.drawing",
     "c2pa.placed", "c2pa.removed", "c2pa.resized", "c2pa.orientation", "c2pa.transcoded",
 }
+
+
+@cache
+def _c2pa() -> tuple[ModuleType | None, str | None]:
+    """Load the native C2PA library on first use.
+
+    It ships an unsigned DLL that OS policies (e.g. Windows Smart App Control)
+    may block; then only this check is skipped instead of the whole app failing.
+    """
+    try:
+        import c2pa
+    except Exception as e:  # ImportError, or RuntimeError when the DLL is refused
+        return None, str(e).strip().splitlines()[0][:160]
+    return c2pa, None
 
 
 def _actions(manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -46,7 +60,13 @@ class ProvenanceAnalyzer(Analyzer):
     weight = 1.5
     description = "C2PA Content Credentials: signer, actions, AI declarations, tamper checks"
 
+    def skip_reason(self, ctx: MediaContext) -> str | None:
+        _, problem = _c2pa()
+        return f"C2PA library unavailable on this system: {problem}" if problem else None
+
     def analyze(self, ctx: MediaContext) -> AnalyzerResult:
+        c2pa, _ = _c2pa()
+        assert c2pa is not None  # guaranteed by skip_reason
         raw = ctx.raw_bytes
         has_markers = b"jumb" in raw and b"c2pa" in raw
         try:

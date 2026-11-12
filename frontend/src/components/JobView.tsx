@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useJob } from "../hooks";
 import type { CasePayload } from "../types";
 import { formatBytes, formatTime } from "../util";
+import { IconAlert, IconFile } from "./Icons";
 
 interface Props {
   jobId: string;
@@ -23,36 +24,46 @@ export function JobView({ jobId, onDone, onNew }: Props) {
   if (error && !job) {
     return (
       <div className="center">
-        <div className="card error-box"><b>Job unavailable</b><p>{error}</p>
-          <button className="btn" onClick={onNew}>New analysis</button></div>
+        <div className="card job">
+          <span className="job-icon bad"><IconAlert size={22} /></span>
+          <h2>Job unavailable</h2>
+          <p className="muted">{error}</p>
+          <button className="btn primary" onClick={onNew}>New analysis</button>
+        </div>
       </div>
     );
   }
-  if (!job) return <div className="center muted">Connecting…</div>;
+  if (!job) return <div className="center"><div className="spinner" aria-label="Connecting" /></div>;
 
   const started = job.started_at ? new Date(job.started_at).getTime() : null;
   const elapsed = started ? (now - started) / 1000 : 0;
+  // Stages read "Analyzer · detail"; show the analyzer as the step and the rest as detail.
+  const [step, detail] = job.stage.split(" · ");
   return (
     <div className="center">
       <div className="card job" aria-live="polite">
-        <div className="kicker">{job.deep ? "Deep scan" : "Quick scan"} · {formatBytes(job.size_bytes)}</div>
-        <h2 className="job-name">{job.name}</h2>
         {job.status === "error" ? (
           <>
-            <div className="error-box card" role="alert"><b>Analysis failed</b><p>{job.error}</p></div>
-            <button className="btn" onClick={onNew}>Analyse another file</button>
+            <span className="job-icon bad"><IconAlert size={22} /></span>
+            <h2>Analysis failed</h2>
+            <p className="muted job-name">{job.name}</p>
+            <div className="card error-box" role="alert">{job.error}</div>
+            <button className="btn primary" onClick={onNew}>Analyse another file</button>
           </>
         ) : (
           <>
-            <div className="progress big-progress"><span style={{ width: `${Math.max(2, job.progress * 100)}%` }} /></div>
+            <span className="job-icon"><IconFile size={22} /></span>
+            <h2>{job.status === "queued" ? "Waiting in queue" : "Analysing"}</h2>
+            <p className="muted job-name">{job.name} · {formatBytes(job.size_bytes)} · {job.deep ? "Deep scan" : "Quick scan"}</p>
+            <div className="progress big"><span style={{ width: `${Math.max(2, job.progress * 100)}%` }} /></div>
             <div className="job-stage">
-              <span>{job.status === "queued" ? `Queued${job.queue_position ? ` · ${job.queue_position} ahead` : ""}` : job.stage}</span>
-              <span>{Math.round(job.progress * 100)}%{started ? ` · ${formatTime(elapsed)}` : ""}</span>
+              <span>
+                {job.status === "queued" ? `${job.queue_position || "No"} job${job.queue_position === 1 ? "" : "s"} ahead` : step}
+                {detail && <small> · {detail}</small>}
+              </span>
+              <span className="tabular">{Math.round(job.progress * 100)}%{started ? ` · ${formatTime(elapsed)}` : ""}</span>
             </div>
-            <p className="muted small-text">
-              The first analysis after start-up also loads the AI models. You can leave this page: the job keeps
-              running and appears in the history when it is done.
-            </p>
+            <p className="fine-print">You can leave this page; the result appears in Recent cases when it is ready.</p>
           </>
         )}
       </div>

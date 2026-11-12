@@ -132,6 +132,7 @@ export interface ModelState {
 }
 
 export interface Health {
+  auth_required?: boolean;
   tool: string;
   version: string;
   runtime: { device: string; gpu?: string; vram_gb?: number };

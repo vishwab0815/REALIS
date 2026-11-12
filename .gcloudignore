@@ -1,0 +1,16 @@
+# Files not uploaded to Cloud Build (mirrors .dockerignore).
+.git
+.venv
+models
+third_party
+cases
+.uploads
+frontend
+tests
+src/realis/web/dist
+**/__pycache__
+.pytest_cache
+.ruff_cache
+*.log
+.env
+.env.*

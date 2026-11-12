@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AnalyzerCard, VerdictCard } from "../components/Results";
+import { Header } from "../components/Chrome";
+import { Modal } from "../components/Modal";
+import { AnalyzerDetails, CheckList, KeyFindings, VerdictSummary, keyFindings } from "../components/Results";
 import { Timeline } from "../components/Timeline";
 import { validateFile } from "../components/UploadPanel";
 import type { AnalyzerResult, Health } from "../types";
@@ -15,44 +17,104 @@ globalThis.ResizeObserver ??= class {
 } as unknown as typeof ResizeObserver;
 
 const health: Health = {
-  tool: "t", version: "0", runtime: { device: "cpu" }, ffmpeg: true, models: {},
+  tool: "realis", version: "0.4.0", runtime: { device: "cuda", gpu: "Test GPU" }, ffmpeg: true,
+  models: { synthetic_voice: { installed: true, loaded: true, enabled: true } },
   supported_types: { image: [".jpg"], audio: [".wav"], video: [".mp4"] },
   limits: { max_upload_mb: 1, max_analysis_seconds: 600 },
 };
 
-describe("VerdictCard", () => {
-  it("shows the label, both meters, rationale and notes", () => {
-    render(<VerdictCard notes={["Quick scan: TruFor skipped."]} verdict={{
+const enf: AnalyzerResult = {
+  analyzer: "enf", title: "ENF", version: "t", status: "ok", evidence_kind: "manipulation", score: 0.85,
+  confidence: 0.55, weight: 1.2, decisive_label: null, elapsed_ms: 3, error: null, artifacts: {}, limitations: ["Needs hum."],
+  findings: [{ severity: "high", title: "Mains-hum discontinuity", detail: "At 18.0 s" }],
+  data: { events: [{ time: 18, kind: "enf", label: "ENF break" }] },
+};
+const clean: AnalyzerResult = {
+  ...enf, analyzer: "copy_move", title: "Copy-move", score: 0.4, confidence: 0.25, data: {},
+  findings: [{ severity: "info", title: "No cloned regions found", detail: "" }],
+};
+const skipped: AnalyzerResult = { ...enf, analyzer: "synthetic_voice", title: "AI voice", status: "skipped", error: "no audio track" };
+
+describe("VerdictSummary", () => {
+  it("shows the label, risk ring and both meters, and asks for the explanation on demand", () => {
+    const onExplain = vi.fn();
+    render(<VerdictSummary onExplain={onExplain} verdict={{
       label: "Indications of AI generation", manipulation_probability: 0.91, ai_generation_probability: 0.91,
       editing_probability: 0.48, category: "synthesis", decisive: false, rationale: ["[synthetic_voice] Strong signal"],
     }} />);
     expect(screen.getByText("Indications of AI generation")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Risk 91%" })).toBeTruthy();
     expect(screen.getByRole("meter", { name: "AI generation" }).getAttribute("aria-valuenow")).toBe("91");
-    expect(screen.getByRole("meter", { name: "Editing / manipulation" }).getAttribute("aria-valuenow")).toBe("48");
-    expect(screen.getByText("[synthetic_voice] Strong signal")).toBeTruthy();
-    expect(screen.getByText(/Quick scan/)).toBeTruthy();
+    // The rationale is not on the summary; it lives behind "Why this verdict?".
+    expect(screen.queryByText("[synthetic_voice] Strong signal")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Why this verdict/ }));
+    expect(onExplain).toHaveBeenCalled();
   });
 });
 
-describe("AnalyzerCard", () => {
-  const base: AnalyzerResult = {
-    analyzer: "enf", title: "ENF", version: "t", status: "ok", evidence_kind: "manipulation", score: 0.85,
-    confidence: 0.55, weight: 1.2, decisive_label: null, elapsed_ms: 3, error: null, artifacts: {}, limitations: [],
-    findings: [{ severity: "high", title: "Mains-hum discontinuity", detail: "At 18.0 s" }],
-    data: { events: [{ time: 18, kind: "enf", label: "ENF break" }] },
-  };
+describe("KeyFindings and CheckList", () => {
+  it("lists only significant findings, most severe first", () => {
+    expect(keyFindings([clean, enf]).map((k) => k.finding.title)).toEqual(["Mains-hum discontinuity"]);
+    const onOpen = vi.fn();
+    render(<KeyFindings results={[clean, enf]} onOpen={onOpen} />);
+    fireEvent.click(screen.getByRole("button", { name: /Mains-hum discontinuity/ }));
+    expect(onOpen).toHaveBeenCalledWith("enf");
+  });
 
-  it("renders findings and seeks when an event chip is clicked", () => {
+  it("says so when nothing significant was found", () => {
+    render(<KeyFindings results={[clean]} onOpen={vi.fn()} />);
+    expect(screen.getByText(/No significant findings/)).toBeTruthy();
+  });
+
+  it("shows one line per check and opens details on click", () => {
+    const onOpen = vi.fn();
+    render(<CheckList results={[enf, clean, skipped]} onOpen={onOpen} />);
+    expect(screen.getByText("Skipped · no audio track")).toBeTruthy();
+    expect(screen.queryByText("At 18.0 s")).toBeNull(); // details stay in the modal
+    fireEvent.click(screen.getByRole("button", { name: "Copy-move: details" }));
+    expect(onOpen).toHaveBeenCalledWith("copy_move");
+  });
+});
+
+describe("AnalyzerDetails", () => {
+  it("shows full findings and limitations, and jump-to-moment chips seek", () => {
     const onSeek = vi.fn();
-    render(<AnalyzerCard result={base} onSeek={onSeek} />);
-    expect(screen.getByText("Mains-hum discontinuity")).toBeTruthy();
+    render(<AnalyzerDetails result={enf} caseId="C" figures={{}} onSeek={onSeek} onFigure={vi.fn()} />);
+    expect(screen.getByText("At 18.0 s")).toBeTruthy();
+    expect(screen.getByText("Needs hum.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /ENF break/ }));
     expect(onSeek).toHaveBeenCalledWith(18);
   });
 
-  it("shows why a skipped analyzer did not run", () => {
-    render(<AnalyzerCard result={{ ...base, status: "skipped", error: "no audio track" }} />);
-    expect(screen.getByText("no audio track")).toBeTruthy();
+  it("explains why a skipped check did not run", () => {
+    render(<AnalyzerDetails result={skipped} caseId="C" figures={{}} onFigure={vi.fn()} />);
+    expect(screen.getByText(/did not run: no audio track/)).toBeTruthy();
+  });
+});
+
+describe("Modal", () => {
+  it("closes on Escape, on the close button and on a backdrop click", () => {
+    const onClose = vi.fn();
+    render(<Modal title="Details" onClose={onClose}><p>Body</p></Modal>);
+    expect(screen.getByRole("dialog", { name: "Details" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.mouseDown(document.querySelector(".modal-backdrop")!);
+    expect(onClose).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("Header", () => {
+  it("summarises system status in one pill and shows details in a modal", () => {
+    render(<Header health={health} error={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "System status: Ready · GPU" }));
+    expect(screen.getByRole("dialog", { name: "System status" })).toBeTruthy();
+    expect(screen.getByText("GPU · Test GPU")).toBeTruthy();
+  });
+
+  it("reports an unreachable server", () => {
+    render(<Header health={null} error="fetch failed" />);
+    expect(screen.getByRole("button", { name: "System status: Server offline" })).toBeTruthy();
   });
 });
 
@@ -78,9 +140,7 @@ describe("validateFile", () => {
     expect(validateFile(new File([], "empty.wav"), health)).toMatch(/empty/);
     expect(validateFile(new File(["x"], "ok.jpg"), health)).toBeNull();
   });
-});
 
-describe("validateFile without server limits", () => {
   it("refuses to upload until the server's limits are known", () => {
     expect(validateFile(new File(["x"], "ok.jpg"), null)).toMatch(/connecting/);
   });

@@ -1,6 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { asset } from "../api";
 import type { CasePayload } from "../types";
 import { formatTime, timelineData } from "../util";
+import { IconLayers } from "./Icons";
 import { Timeline } from "./Timeline";
 
 export interface StageHandle {
@@ -12,25 +14,31 @@ interface Layer {
   url: string;
 }
 
-/** Media viewer: image layers, or an audio/video player with filmstrip and evidence timeline. */
-export const MediaStage = forwardRef<StageHandle, { payload: CasePayload }>(function MediaStage({ payload }, ref) {
+interface Props {
+  payload: CasePayload;
+  onFigure: (label: string, url: string) => void;
+}
+
+/** Media viewer: image with switchable layers, or an audio/video player with filmstrip and timeline. */
+export const MediaStage = forwardRef<StageHandle, Props>(function MediaStage({ payload, onFigure }, ref) {
   const { report, urls } = payload;
   const mediaRef = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   const [time, setTime] = useState(0);
   const [mediaDuration, setMediaDuration] = useState(0);
   const timeline = useMemo(() => timelineData(report), [report]);
   const duration = mediaDuration || timeline.duration;
+  const isImage = report.modality === "image";
 
-  const layers: Layer[] = useMemo(() => {
-    const figures = [
-      ...Object.entries(urls.overview).map(([label, url]) => ({ label, url })),
-      ...Object.values(urls.artifacts).flatMap((a) => Object.entries(a).map(([label, url]) => ({ label, url }))),
-    ];
-    return report.modality === "image" && urls.evidence ? [{ label: "Original", url: urls.evidence }, ...figures] : figures;
-  }, [report.modality, urls]);
-  // Images open on the original; time-based media keep the player in front and show figures on demand.
-  const [layer, setLayer] = useState<Layer | null>(report.modality === "image" ? layers[0] ?? null : null);
-  useEffect(() => setLayer(report.modality === "image" ? layers[0] ?? null : null), [layers, report.modality]);
+  const figures: Layer[] = useMemo(() => [
+    ...Object.entries(urls.overview).map(([label, url]) => ({ label, url })),
+    ...Object.values(urls.artifacts).flatMap((a) => Object.entries(a).map(([label, url]) => ({ label, url }))),
+  ], [urls]);
+  const imageLayers = useMemo(
+    () => (isImage && urls.evidence ? [{ label: "Original", url: urls.evidence }, ...figures] : []),
+    [isImage, urls.evidence, figures],
+  );
+  const [layer, setLayer] = useState<Layer | null>(imageLayers[0] ?? null);
+  useEffect(() => setLayer(imageLayers[0] ?? null), [imageLayers]);
 
   const seek = (t: number) => {
     const m = mediaRef.current;
@@ -41,37 +49,26 @@ export const MediaStage = forwardRef<StageHandle, { payload: CasePayload }>(func
   };
   useImperativeHandle(ref, () => ({ seek }));
 
-  const player = urls.evidence && report.modality !== "image" && (
-    report.modality === "video" ? (
-      <video ref={mediaRef} src={urls.evidence} controls preload="metadata" className="player-video"
-             onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
-             onLoadedMetadata={(e) => setMediaDuration(e.currentTarget.duration || 0)} />
-    ) : (
-      <audio ref={mediaRef} src={urls.evidence} controls preload="metadata" className="player-audio"
-             onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
-             onLoadedMetadata={(e) => setMediaDuration(e.currentTarget.duration || 0)} />
-    )
-  );
+  const mediaEvents = {
+    onTimeUpdate: (e: { currentTarget: HTMLMediaElement }) => setTime(e.currentTarget.currentTime),
+    onLoadedMetadata: (e: { currentTarget: HTMLMediaElement }) => setMediaDuration(e.currentTarget.duration || 0),
+  };
 
   return (
     <div className={`stage stage-${report.modality}`}>
       <div className="stage-main">
-        {report.modality === "image" && layer && <img src={layer.url} alt={layer.label} className="stage-img" />}
-        {report.modality === "video" && player}
-        {report.modality === "audio" && (
-          <img src={urls.overview["Evidence timeline"] ?? layers[0]?.url} alt="Evidence timeline" className="stage-img" />
+        {isImage && layer && <img src={layer.url} alt={layer.label} className="stage-img" />}
+        {report.modality === "video" && urls.evidence && (
+          <video ref={mediaRef} src={urls.evidence} controls preload="metadata" className="player-video" {...mediaEvents} />
         )}
-        {report.modality !== "image" && layer && (
-          <div className="lightbox" role="dialog" aria-label={layer.label} onClick={() => setLayer(null)}>
-            <figure onClick={(e) => e.stopPropagation()}>
-              <img src={layer.url} alt={layer.label} />
-              <figcaption>{layer.label} <button className="btn ghost small" onClick={() => setLayer(null)}>Close</button></figcaption>
-            </figure>
-          </div>
+        {report.modality === "audio" && (
+          <img src={urls.overview["Evidence timeline"] ?? figures[0]?.url} alt="Evidence timeline" className="stage-img" />
         )}
       </div>
 
-      {report.modality === "audio" && player}
+      {report.modality === "audio" && urls.evidence && (
+        <audio ref={mediaRef} src={urls.evidence} controls preload="metadata" className="player-audio" {...mediaEvents} />
+      )}
 
       {timeline.frames.length > 0 && (
         <div className="filmstrip" aria-label="Sampled frames">
@@ -81,7 +78,7 @@ export const MediaStage = forwardRef<StageHandle, { payload: CasePayload }>(func
             return (
               <button key={f.path} className={`frame tone-${tone} ${active ? "active" : ""}`} onClick={() => seek(f.time)}
                       title={`${formatTime(f.time, true)} · AI ${Math.round(f.probability * 100)}%`}>
-                <img src={`/cases/${report.evidence.case_id}/${f.path}`} alt={`Frame at ${formatTime(f.time, true)}`} loading="lazy" />
+                <img src={asset(`/cases/${report.evidence.case_id}/${f.path}`)} alt={`Frame at ${formatTime(f.time, true)}`} loading="lazy" />
                 <span>{formatTime(f.time)}</span>
               </button>
             );
@@ -89,16 +86,18 @@ export const MediaStage = forwardRef<StageHandle, { payload: CasePayload }>(func
         </div>
       )}
 
-      {report.modality !== "image" && duration > 0 && (timeline.series.length > 0 || timeline.events.length > 0) && (
+      {!isImage && duration > 0 && (timeline.series.length > 0 || timeline.events.length > 0) && (
         <Timeline duration={duration} series={timeline.series} events={timeline.events} currentTime={time} onSeek={seek} />
       )}
 
-      {layers.length > 0 && (
-        <nav className="layers" aria-label="Evidence figures">
-          {report.modality !== "image" && <span className="layers-label">Figures</span>}
-          {layers.map((l) => (
-            <button key={l.url} className={layer?.url === l.url ? "active" : ""} onClick={() => setLayer(l)}>{l.label}</button>
-          ))}
+      {(isImage ? imageLayers.length > 1 : figures.length > 0) && (
+        <nav className="views" aria-label="Evidence views">
+          <span className="views-label"><IconLayers size={14} /> {isImage ? "Layers" : "Evidence views"}</span>
+          {isImage
+            ? imageLayers.map((l) => (
+                <button key={l.url} className={layer?.url === l.url ? "active" : ""} onClick={() => setLayer(l)}>{l.label}</button>
+              ))
+            : figures.map((l) => <button key={l.url} onClick={() => onFigure(l.label, l.url)}>{l.label}</button>)}
         </nav>
       )}
     </div>

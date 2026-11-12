@@ -1,6 +1,7 @@
 import pytest
-
 import video_fixtures as vf
+from conftest import C2PA_AVAILABLE
+
 from realis.audio import io as audio_io
 from realis.core.models import Severity, Status
 from realis.ml import commfor
@@ -115,6 +116,8 @@ def test_silent_video_skips_audio_checks(tmp_path):
     report, _ = analyze_media(vf.continuous(tmp_path / "silent.mp4"), tmp_path / "cases",
                               exclude=["frame_ai"], deep=False)
     skipped = {r.analyzer: r.error for r in report.results if r.status == Status.SKIPPED}
+    if not C2PA_AVAILABLE:
+        skipped.pop("c2pa_provenance")
     assert skipped == {"synthetic_voice": "no audio track", "enf": "no audio track",
                        "edit_discontinuity": "no audio track", "bandwidth": "no audio track"}
     assert any("no audio track" in n for n in report.notes)

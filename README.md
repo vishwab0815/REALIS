@@ -102,6 +102,43 @@ Optional: install ExifTool for deeper image metadata parsing.
 Configuration (environment variables): `REALIS_HOME` (data root), `REALIS_CASES`,
 `REALIS_MAX_UPLOAD_MB` (default 500), `REALIS_JOB_WORKERS` (default 1: one GPU).
 
+## Deployment (Google Cloud Run + Vercel)
+
+The analysis engine runs as a container on **Cloud Run**; the web app is a static site on **Vercel**.
+
+**Backend** (`Dockerfile`: Python 3.12, FFmpeg, CPU PyTorch, quick-scan models baked in; keep the image
+private because of the model licences):
+
+```
+gcloud artifacts repositories create realis --repository-format=docker --location=asia-south1
+gcloud builds submit --tag asia-south1-docker.pkg.dev/PROJECT_ID/realis/backend:TAG --timeout=60m
+gcloud run deploy realis-api --image asia-south1-docker.pkg.dev/PROJECT_ID/realis/backend:TAG \
+  --region asia-south1 --cpu 2 --memory 4Gi --no-cpu-throttling \
+  --min-instances 0 --max-instances 1 --timeout 900 --allow-unauthenticated \
+  --set-env-vars "REALIS_ACCESS_CODE=...,REALIS_MAX_UPLOAD_MB=30,REALIS_RETENTION_HOURS=6,REALIS_CORS_ORIGIN_REGEX=^https://realis(-[a-z0-9-]+)?\.vercel\.app$"
+```
+
+- `--no-cpu-throttling`: analyses run as background jobs, which need CPU between requests.
+- `--max-instances 1`: jobs live in the instance's memory, so every request must reach the same one.
+- Cloud Run rejects requests over 32 MB, so uploads are capped at 30 MB.
+- Cases are deleted after `REALIS_RETENTION_HOURS` and whenever the instance restarts (nothing is stored).
+
+**Frontend** (from `frontend/`, with the Vercel CLI):
+
+```
+npx vercel link --yes --project realis
+npx vercel deploy --prod --yes --build-env VITE_API_URL=https://YOUR-SERVICE.run.app
+```
+
+Users open the Vercel URL and enter the access code once.
+
+| Variable | Purpose |
+|---|---|
+| `REALIS_ACCESS_CODE` | Shared code required for `/api` (except health) and `/cases` |
+| `REALIS_CORS_ORIGINS` / `REALIS_CORS_ORIGIN_REGEX` | Websites allowed to call the API |
+| `REALIS_RETENTION_HOURS` | Delete cases older than this (0 = keep) |
+| `VITE_API_URL` (frontend build) | Backend address; empty when the backend serves the app itself |
+
 ## Web API
 
 | Endpoint | Purpose |

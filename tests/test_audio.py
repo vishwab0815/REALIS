@@ -3,9 +3,10 @@ import sys
 
 import numpy as np
 import pytest
+from audio_fixtures import SR, recording, write_wav
+from conftest import C2PA_AVAILABLE
 from scipy.signal import resample_poly
 
-from audio_fixtures import SR, recording, write_wav
 from realis.audio import io, signal
 from realis.audio.analyzers.bandwidth import BandwidthAnalyzer
 from realis.audio.analyzers.edits import EditDiscontinuityAnalyzer
@@ -152,7 +153,8 @@ def test_audio_pipeline_end_to_end(tmp_path):
     assert report.modality == "audio" and report.integrity_verified and report.custody_log_valid
     assert {r.analyzer for r in report.results} == {
         "c2pa_provenance", "audio_metadata", "enf", "edit_discontinuity", "bandwidth"}
-    assert all(r.status == Status.OK for r in report.results), [(r.analyzer, r.error) for r in report.results]
+    assert all(r.status == Status.OK or (r.analyzer == "c2pa_provenance" and not C2PA_AVAILABLE)
+               for r in report.results), [(r.analyzer, r.error) for r in report.results]
     enf = next(r for r in report.results if r.analyzer == "enf")
     assert "Mains-hum discontinuity: possible cut or insert" in _titles(enf)
     assert report.verdict.category == "manipulation"

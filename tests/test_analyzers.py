@@ -1,13 +1,18 @@
 import numpy as np
+import pytest
+from conftest import C2PA_AVAILABLE, decode, jpeg_bytes
 from PIL import Image, PngImagePlugin
 
-from conftest import decode, jpeg_bytes
+from realis.common import provenance
+from realis.common.provenance import ProvenanceAnalyzer
 from realis.core.models import Severity, Status
 from realis.image.analyzers.copy_move import CopyMoveAnalyzer
-from realis.image.analyzers.jpeg_structure import JpegStructureAnalyzer, estimate_quality
+from realis.image.analyzers.jpeg_structure import (
+    JpegStructureAnalyzer,
+    estimate_quality,
+)
 from realis.image.analyzers.metadata import MetadataAnalyzer, compare_thumbnail
 from realis.image.analyzers.noise import BLOCK, NoiseAnalyzer, noise_map
-from realis.common.provenance import ProvenanceAnalyzer
 
 
 def _titles(res):
@@ -115,6 +120,13 @@ def test_camera_jpeg_reencoded_with_stock_tables(make_ctx, coffee):
 
 # --- Provenance -------------------------------------------------------------
 
+def test_c2pa_skips_cleanly_when_library_is_blocked(make_ctx, coffee, monkeypatch):
+    monkeypatch.setattr(provenance, "_c2pa", lambda: (None, "blocked by an Application Control policy"))
+    res = ProvenanceAnalyzer().run(make_ctx(jpeg_bytes(coffee, 90)))
+    assert res.status == Status.SKIPPED and "blocked" in res.error
+
+
+@pytest.mark.skipif(not C2PA_AVAILABLE, reason="C2PA native library blocked or missing on this system")
 def test_no_c2pa_is_neutral(make_ctx, coffee):
     res = ProvenanceAnalyzer().run(make_ctx(jpeg_bytes(coffee, 90)))
     assert res.status == Status.OK

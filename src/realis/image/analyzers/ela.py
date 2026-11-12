@@ -21,7 +21,13 @@ from PIL import Image
 from realis.core.analyzer import Analyzer, register
 from realis.core.context import ImageContext
 from realis.core.models import AnalyzerResult, Finding, Severity
-from realis.image.blocks import anomaly_regions, block_mean, detrend, region_score, robust_z
+from realis.image.blocks import (
+    anomaly_regions,
+    block_mean,
+    detrend,
+    region_score,
+    robust_z,
+)
 
 BLOCK = 16
 RESAVE_QUALITY = 90

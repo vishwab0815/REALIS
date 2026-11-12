@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import stat
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +35,28 @@ def urls(report: Report, cases_dir: Path) -> dict[str, Any]:
         "overview": {label: under(p) for label, p in report.overview.items()},
         "artifacts": {r.analyzer: {label: under(p) for label, p in r.artifacts.items()} for r in report.results},
     }
+
+
+def prune(cases_dir: Path, max_age_hours: float) -> int:
+    """Delete case folders not touched for max_age_hours; returns how many were removed.
+
+    For hosted deployments that must not keep uploads. Evidence copies are
+    read-only by design, so permissions are lifted just for the deletion.
+    """
+    if max_age_hours <= 0 or not cases_dir.is_dir():
+        return 0
+    cutoff = time.time() - max_age_hours * 3600
+
+    def force(func, path, _exc):
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+
+    removed = 0
+    for case in cases_dir.iterdir():
+        if case.is_dir() and case.stat().st_mtime < cutoff:
+            shutil.rmtree(case, onexc=force)
+            removed += 1
+    return removed
 
 
 def _thumbnail(report: Report, payload: dict[str, Any]) -> str | None:

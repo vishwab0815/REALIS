@@ -1,8 +1,8 @@
 import json
 
 import pytest
+from conftest import C2PA_AVAILABLE, jpeg_bytes
 
-from conftest import jpeg_bytes
 from realis.core.fusion import fuse
 from realis.core.models import AnalyzerResult, EvidenceKind, Status
 from realis.ml import commfor
@@ -20,6 +20,7 @@ def test_end_to_end_report(tmp_path, coffee):
         "metadata", "c2pa_provenance", "jpeg_structure", "ela", "noise_inconsistency", "copy_move",
         "ai_generated"}
     assert all(r.status == Status.OK or (r.analyzer == "ai_generated" and not commfor.available())
+               or (r.analyzer == "c2pa_provenance" and not C2PA_AVAILABLE)
                for r in report.results), [(r.analyzer, r.error) for r in report.results if r.status != Status.OK]
     assert paths["json"].exists() and paths["html"].exists()
     assert json.loads(paths["json"].read_text())["evidence"]["sha256"] == report.evidence.sha256

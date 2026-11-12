@@ -26,12 +26,14 @@ export function useRoute(): [Route, (to: string) => void] {
 }
 
 /** Poll a loader every `ms` while `active` returns true for the latest value. */
-function usePolling<T>(load: (s: AbortSignal) => Promise<T>, ms: number, active: (v: T | null) => boolean, deps: unknown[]) {
+function usePolling<T>(load: (s: AbortSignal) => Promise<T>, ms: number, active: (v: T | null) => boolean, deps: unknown[],
+                       enabled = true) {
   const [value, setValue] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
   useEffect(() => {
+    if (!enabled) return;
     const ctl = new AbortController();
     let timer: number | undefined;
     const tick = async () => {
@@ -53,7 +55,7 @@ function usePolling<T>(load: (s: AbortSignal) => Promise<T>, ms: number, active:
       window.clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps, enabled]);
   return { value, error };
 }
 
@@ -71,14 +73,15 @@ export function useJob(jobId: string) {
   return usePolling<Job>((s) => api.job(jobId, s), 1000, (j) => !j || j.status === "queued" || j.status === "running", [jobId]);
 }
 
-export function useActiveJobs(refreshKey: number) {
-  return usePolling<Job[]>((s) => api.activeJobs(s), 2000, (jobs) => !!jobs && jobs.length > 0, [refreshKey]);
+export function useActiveJobs(refreshKey: number, enabled = true) {
+  return usePolling<Job[]>((s) => api.activeJobs(s), 2000, (jobs) => !!jobs && jobs.length > 0, [refreshKey], enabled);
 }
 
-export function useCases(query: string, refreshKey: number) {
+export function useCases(query: string, refreshKey: number, enabled = true) {
   const [cases, setCases] = useState<CaseSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     const ctl = new AbortController();
     const timer = window.setTimeout(() => {
       api.cases(query, ctl.signal).then(
@@ -93,6 +96,6 @@ export function useCases(query: string, refreshKey: number) {
       ctl.abort();
       window.clearTimeout(timer);
     };
-  }, [query, refreshKey]);
+  }, [query, refreshKey, enabled]);
   return { cases, error };
 }
