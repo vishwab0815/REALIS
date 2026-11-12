@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Header } from "../components/Chrome";
+import { layerInfo } from "../components/MediaStage";
 import { Modal } from "../components/Modal";
 import { AnalyzerDetails, CheckList, KeyFindings, VerdictSummary, keyFindings } from "../components/Results";
 import { Timeline } from "../components/Timeline";
@@ -50,6 +51,28 @@ describe("VerdictSummary", () => {
     fireEvent.click(screen.getByRole("button", { name: /Why this verdict/ }));
     expect(onExplain).toHaveBeenCalled();
   });
+
+  it("shows case notes quietly inside the verdict card", () => {
+    render(<VerdictSummary onExplain={vi.fn()} notes={["Quick scan: deep-scan analyzers (TruFor) were skipped."]} verdict={{
+      label: "No significant evidence", manipulation_probability: 0.3, ai_generation_probability: 0.2,
+      editing_probability: 0.3, category: "none", decisive: false, rationale: [],
+    }} />);
+    const note = screen.getByText(/TruFor\) were skipped/);
+    expect(note.closest(".verdict")).toBeTruthy();
+  });
+});
+
+describe("layerInfo", () => {
+  it("gives every image layer a short button name and an explanation", () => {
+    expect(layerInfo("ELA anomaly map (texture-normalised)")).toMatchObject({ short: "ELA anomalies" });
+    expect(layerInfo("Noise inconsistency map").hint).toMatch(/does not match/);
+    expect(layerInfo("TruFor localization map").short).toBe("TruFor map");
+  });
+
+  it("shortens labels it does not know by dropping brackets and a trailing 'map'", () => {
+    expect(layerInfo("Spectral residue map (log scale)")).toEqual({ short: "Spectral residue", hint: "" });
+    expect(layerInfo("Frequency spectrum").short).toBe("Frequency spectrum");
+  });
 });
 
 describe("KeyFindings and CheckList", () => {
@@ -61,9 +84,16 @@ describe("KeyFindings and CheckList", () => {
     expect(onOpen).toHaveBeenCalledWith("enf");
   });
 
-  it("says so when nothing significant was found", () => {
-    render(<KeyFindings results={[clean]} onOpen={vi.fn()} />);
-    expect(screen.getByText(/No significant findings/)).toBeTruthy();
+  it("drops the empty findings card and says so in the check list instead", () => {
+    const { container } = render(<KeyFindings results={[clean]} onOpen={vi.fn()} />);
+    expect(container.firstChild).toBeNull();
+    render(<CheckList results={[clean]} onOpen={vi.fn()} />);
+    expect(screen.getByText(/No significant findings across 1 checks/)).toBeTruthy();
+  });
+
+  it("does not claim a clear result when there are significant findings", () => {
+    render(<CheckList results={[clean, enf]} onOpen={vi.fn()} />);
+    expect(screen.queryByText(/No significant findings/)).toBeNull();
   });
 
   it("shows one line per check and opens details on click", () => {

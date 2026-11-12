@@ -38,6 +38,19 @@ h1, h2, h3, h4 { font-weight: 650; letter-spacing: -0.01em; }
 .muted { color: var(--text-3); }
 .tabular { font-variant-numeric: tabular-nums; }
 
+/* Slim, theme-coloured scrollbars with no arrow buttons. Chromium ignores ::-webkit-scrollbar on any element
+   that sets scrollbar-width/-color, so the standard properties are only used where WebKit styling is absent. */
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.22); }
+  ::-webkit-scrollbar-button { display: none; }
+}
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
+}
+
 /* Tone tokens: every element that can be ok/warn/bad/ai sets --tone */
 .tone-ok { --tone: var(--ok); } .tone-warn { --tone: var(--warn); } .tone-bad { --tone: var(--bad); }
 .tone-ai { --tone: var(--ai); } .tone-none, .tone-info { --tone: var(--info); }
@@ -168,8 +181,7 @@ h1, h2, h3, h4 { font-weight: 650; letter-spacing: -0.01em; }
 .case-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .case-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr); gap: 16px; }
 .case-media { display: flex; }
-.case-results { overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; min-height: 0; }
-.notice { font-size: 12.5px; color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 25%, transparent); padding: 8px 12px; border-radius: 10px; }
+.case-results { overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 2px; min-height: 0; scrollbar-gutter: stable; }
 
 /* verdict */
 .verdict { border-color: color-mix(in srgb, var(--tone) 35%, var(--line)); background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--tone) 10%, transparent), transparent 55%), var(--surface); }
@@ -187,6 +199,9 @@ h1, h2, h3, h4 { font-weight: 650; letter-spacing: -0.01em; }
 .meter-head b { color: var(--text); font-variant-numeric: tabular-nums; }
 .meter { height: 6px; background: var(--raised); border-radius: 999px; overflow: hidden; }
 .meter-fill { display: block; height: 100%; background: var(--tone); border-radius: 999px; }
+.verdict-notes { list-style: none; padding: 12px 0 0; margin-top: 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.verdict-notes li { display: flex; align-items: flex-start; gap: 7px; font-size: 12.5px; color: var(--text-3); }
+.verdict-notes svg { flex-shrink: 0; margin-top: 3px; }
 
 /* key findings */
 .key-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -202,6 +217,7 @@ h1, h2, h3, h4 { font-weight: 650; letter-spacing: -0.01em; }
 /* checks */
 .checks { padding: 14px 10px 10px; }
 .checks .card-title { padding: 0 8px; }
+.checks .empty-line { padding: 0 8px 8px; }
 .checks ul { list-style: none; padding: 0; display: flex; flex-direction: column; }
 .check-row { width: 100%; display: flex; align-items: center; gap: 11px; padding: 9px 8px; border-radius: 10px; text-align: left; color: var(--text-3); }
 .check-row:hover { background: var(--raised); color: var(--text); }
@@ -216,13 +232,25 @@ h1, h2, h3, h4 { font-weight: 650; letter-spacing: -0.01em; }
 
 /* ============================================================ media stage */
 .stage { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
-.stage-main { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: #07080c; }
+.stage-main { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0) 0 0 / 18px 18px, #07080c; }
 .stage-img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.stage-image .stage-img { box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55); }
+.stage-caption { position: absolute; left: 12px; bottom: 12px; max-width: min(440px, calc(100% - 24px)); display: flex; flex-direction: column;
+  gap: 1px; padding: 8px 12px; border-radius: 10px; background: rgba(10, 12, 17, 0.82); backdrop-filter: blur(8px);
+  border: 1px solid var(--line-strong); font-size: 12px; color: var(--text-2); pointer-events: none; animation: fade 0.15s ease; }
+.stage-caption b { color: var(--text); font-size: 12.5px; font-weight: 600; }
+.stage-expand { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+  color: var(--text-2); background: rgba(10, 12, 17, 0.72); backdrop-filter: blur(8px); border: 1px solid var(--line-strong);
+  opacity: 0.75; transition: 0.15s; }
+.stage-main:hover .stage-expand, .stage-expand:focus-visible { opacity: 1; }
+.stage-expand:hover { color: var(--text); background: rgba(26, 31, 44, 0.9); }
 .player-video { width: 100%; height: 100%; background: #000; object-fit: contain; }
 .player-audio { width: calc(100% - 28px); margin: 12px 14px 0; height: 40px; }
-.filmstrip { display: flex; gap: 6px; padding: 12px 14px 0; overflow-x: auto; flex-shrink: 0; scrollbar-width: thin; }
-.frame { flex-shrink: 0; width: 92px; padding: 0; border-radius: 8px; overflow: hidden; position: relative; border: 2px solid transparent; background: var(--raised); }
-.frame img { display: block; width: 100%; height: 52px; object-fit: cover; opacity: 0.85; }
+.filmstrip { display: flex; gap: 6px; padding: 12px 14px 4px; overflow-x: auto; flex-shrink: 0; }
+/* Frames stretch to fill the strip; it only scrolls when there are more frames than fit (long videos, phones). */
+.frame { flex: 1 0 64px; max-width: 124px; padding: 0; border-radius: 8px; overflow: hidden; position: relative; border: 2px solid transparent; background: var(--raised); }
+.frame img { display: block; width: 100%; aspect-ratio: 16 / 9; height: auto; object-fit: cover; opacity: 0.85; }
 .frame:hover img, .frame.active img { opacity: 1; }
 .frame span { position: absolute; bottom: 3px; right: 4px; font-size: 10.5px; background: rgba(0, 0, 0, 0.7); padding: 0 5px; border-radius: 4px; font-variant-numeric: tabular-nums; }
 .frame.tone-ai { border-color: var(--ai); } .frame.tone-warn { border-color: var(--warn); }
@@ -235,11 +263,15 @@ h1, h2, h3, h4 { font-weight: 650; letter-spacing: -0.01em; }
 .tl-tick { stroke: var(--text-3); }
 .tl-axis { fill: var(--text-3); font-size: 10.5px; }
 .tl-playhead { stroke: #fff; stroke-width: 1.5; }
-.views { display: flex; gap: 6px; padding: 12px 14px; overflow-x: auto; flex-shrink: 0; align-items: center; border-top: 1px solid var(--line); margin-top: 12px; scrollbar-width: thin; }
-.views-label { display: inline-flex; align-items: center; gap: 5px; color: var(--text-3); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 4px; flex-shrink: 0; }
-.views button { flex-shrink: 0; padding: 5px 11px; border-radius: 999px; font-size: 12.5px; color: var(--text-2); background: var(--raised); border: 1px solid var(--line); }
-.views button:hover { color: var(--text); border-color: var(--line-strong); }
-.views button.active { color: #0a0d18; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+/* Layer / view buttons wrap onto a second line instead of scrolling sideways. */
+.views { display: flex; gap: 10px; padding: 10px 14px; flex-shrink: 0; align-items: flex-start; border-top: 1px solid var(--line); margin-top: 12px; }
+.views-label { display: inline-flex; align-items: center; gap: 5px; height: 28px; color: var(--text-3); font-size: 11px; font-weight: 650;
+  text-transform: uppercase; letter-spacing: 0.08em; flex-shrink: 0; }
+.views-list { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.views-list button { height: 28px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; font-weight: 550; color: var(--text-2);
+  background: var(--raised); border: 1px solid var(--line); white-space: nowrap; transition: 0.12s; }
+.views-list button:hover { color: var(--text); border-color: var(--line-strong); background: var(--hover); }
+.views-list button.active { color: #0a0d18; background: var(--accent); border-color: var(--accent); font-weight: 650; }
 
 /* ============================================================ modal */
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(4, 6, 10, 0.68); backdrop-filter: blur(6px);
@@ -309,6 +341,25 @@ h1, h2, h3, h4 { font-weight: 650; letter-spacing: -0.01em; }
   .case-media { height: 70vh; }
   .tagline { display: none; }
   .meters, .stat-row { grid-template-columns: 1fr 1fr; }
+  /* The case list is cut off by the sidebar's max height: fade it out instead of slicing an item in half. */
+  .side-section.scroll { -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent); mask-image: linear-gradient(to bottom, #000 78%, transparent); }
+}
+
+/* ============================================================ phones */
+@media (max-width: 640px) {
+  .topbar { padding: 0 14px; }
+  .main { padding: 16px 14px; }
+  .case-head { flex-wrap: wrap; }
+  .case-actions { flex-basis: 100%; }
+  .case-actions .btn { flex: 1; }
+  .case-media { height: 62vh; }
+  .views { flex-direction: column; gap: 8px; }
+  .verdict-label { font-size: 17px; }
+  .meters { grid-template-columns: 1fr; gap: 12px; }
+  .hero h1 { font-size: 30px; }
+  .modal-backdrop { padding: 10px; }
+  .facts { grid-template-columns: 1fr; gap: 2px; }
+  .facts dd { margin-bottom: 8px; }
 }
 
 /* ============================================================ access gate */

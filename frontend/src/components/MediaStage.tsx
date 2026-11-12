@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { asset } from "../api";
 import type { CasePayload } from "../types";
 import { formatTime, timelineData } from "../util";
-import { IconLayers } from "./Icons";
+import { IconExpand, IconLayers } from "./Icons";
 import { Timeline } from "./Timeline";
 
 export interface StageHandle {
@@ -17,6 +17,26 @@ interface Layer {
 interface Props {
   payload: CasePayload;
   onFigure: (label: string, url: string) => void;
+}
+
+// Short button names and a one-line explanation for the image layers the analyzers produce.
+const LAYER_INFO: Record<string, { short: string; hint: string }> = {
+  Original: { short: "Original", hint: "The evidence copy, as uploaded." },
+  "ELA (amplified)": { short: "ELA", hint: "Error level analysis: areas that recompress differently look brighter." },
+  "ELA anomaly map (texture-normalised)": { short: "ELA anomalies", hint: "Hot areas react to recompression unusually for their texture." },
+  "Noise level map": { short: "Noise level", hint: "Strength of the camera's sensor noise across the image." },
+  "Noise inconsistency map": { short: "Noise anomalies", hint: "Hot areas have noise that does not match the rest of the image." },
+  "Copy-move matches": { short: "Copy-move", hint: "Regions that appear to be duplicated within the image." },
+  "TruFor localization map": { short: "TruFor map", hint: "Where the TruFor model suspects tampering." },
+  "TruFor reliability map": { short: "TruFor reliability", hint: "How far the TruFor map can be trusted in each area." },
+};
+
+/** Button name and explanation for a layer; unknown labels lose "(…)" and a trailing "map". */
+export function layerInfo(label: string) {
+  return LAYER_INFO[label] ?? {
+    short: label.replace(/\s*\([^)]*\)/g, "").replace(/\s+map$/i, "").trim() || label,
+    hint: "",
+  };
 }
 
 /** Media viewer: image with switchable layers, or an audio/video player with filmstrip and timeline. */
@@ -39,6 +59,12 @@ export const MediaStage = forwardRef<StageHandle, Props>(function MediaStage({ p
   );
   const [layer, setLayer] = useState<Layer | null>(imageLayers[0] ?? null);
   useEffect(() => setLayer(imageLayers[0] ?? null), [imageLayers]);
+  const audioOverview: Layer | null = report.modality === "audio"
+    ? { label: "Evidence timeline", url: urls.overview["Evidence timeline"] ?? figures[0]?.url }
+    : null;
+  // The picture on the stage that "View full size" opens.
+  const shown = isImage ? layer : audioOverview?.url ? audioOverview : null;
+  const caption = isImage && layer && layer.label !== "Original" ? layerInfo(layer.label) : null;
 
   const seek = (t: number) => {
     const m = mediaRef.current;
@@ -61,8 +87,18 @@ export const MediaStage = forwardRef<StageHandle, Props>(function MediaStage({ p
         {report.modality === "video" && urls.evidence && (
           <video ref={mediaRef} src={urls.evidence} controls preload="metadata" className="player-video" {...mediaEvents} />
         )}
-        {report.modality === "audio" && (
-          <img src={urls.overview["Evidence timeline"] ?? figures[0]?.url} alt="Evidence timeline" className="stage-img" />
+        {audioOverview?.url && <img src={audioOverview.url} alt={audioOverview.label} className="stage-img" />}
+        {caption && (
+          <div className="stage-caption" role="note">
+            <b>{layer!.label}</b>
+            {caption.hint && <span>{caption.hint}</span>}
+          </div>
+        )}
+        {shown && (
+          <button className="stage-expand" onClick={() => onFigure(shown.label, shown.url)} title="View full size"
+                  aria-label="View full size">
+            <IconExpand size={15} />
+          </button>
         )}
       </div>
 
@@ -91,13 +127,20 @@ export const MediaStage = forwardRef<StageHandle, Props>(function MediaStage({ p
       )}
 
       {(isImage ? imageLayers.length > 1 : figures.length > 0) && (
-        <nav className="views" aria-label="Evidence views">
-          <span className="views-label"><IconLayers size={14} /> {isImage ? "Layers" : "Evidence views"}</span>
-          {isImage
-            ? imageLayers.map((l) => (
-                <button key={l.url} className={layer?.url === l.url ? "active" : ""} onClick={() => setLayer(l)}>{l.label}</button>
-              ))
-            : figures.map((l) => <button key={l.url} onClick={() => onFigure(l.label, l.url)}>{l.label}</button>)}
+        <nav className="views" aria-label={isImage ? "Image layers" : "Evidence views"}>
+          <span className="views-label"><IconLayers size={14} /> {isImage ? "Layers" : "Views"}</span>
+          <div className="views-list">
+            {isImage
+              ? imageLayers.map((l) => (
+                  <button key={l.url} className={layer?.url === l.url ? "active" : ""} aria-pressed={layer?.url === l.url}
+                          title={l.label} onClick={() => setLayer(l)}>
+                    {layerInfo(l.label).short}
+                  </button>
+                ))
+              : figures.map((l) => (
+                  <button key={l.url} title={l.label} onClick={() => onFigure(l.label, l.url)}>{layerInfo(l.label).short}</button>
+                ))}
+          </div>
         </nav>
       )}
     </div>

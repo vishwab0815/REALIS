@@ -68,8 +68,7 @@ export function CaseView({ caseId, initial }: { caseId: string; initial?: CasePa
           <MediaStage ref={stage} payload={payload} onFigure={(label, url) => setDialog({ kind: "figure", label, url })} />
         </section>
         <section className="case-results" aria-label="Findings">
-          <VerdictSummary verdict={report.verdict} onExplain={() => setDialog({ kind: "verdict" })} />
-          {report.notes.length > 0 && <p className="notice">{report.notes[0]}{report.notes.length > 1 && ` (+${report.notes.length - 1} more)`}</p>}
+          <VerdictSummary verdict={report.verdict} notes={report.notes} onExplain={() => setDialog({ kind: "verdict" })} />
           <KeyFindings results={results} onOpen={(name) => setDialog({ kind: "analyzer", name })} />
           <CheckList results={results} onOpen={(name) => setDialog({ kind: "analyzer", name })} />
         </section>

@@ -70,7 +70,7 @@ export function Meter({ label, value }: { label: string; value: number }) {
   );
 }
 
-export function VerdictSummary({ verdict, onExplain }: { verdict: Verdict; onExplain: () => void }) {
+export function VerdictSummary({ verdict, notes = [], onExplain }: { verdict: Verdict; notes?: string[]; onExplain: () => void }) {
   const tone = verdictTone(verdict.manipulation_probability, verdict.category);
   return (
     <section className={`card verdict tone-${tone}`} aria-label="Verdict">
@@ -89,38 +89,43 @@ export function VerdictSummary({ verdict, onExplain }: { verdict: Verdict; onExp
         <Meter label="AI generation" value={verdict.ai_generation_probability} />
         <Meter label="Editing / manipulation" value={verdict.editing_probability} />
       </div>
-    </section>
-  );
-}
-
-export function KeyFindings({ results, onOpen }: { results: AnalyzerResult[]; onOpen: (name: string) => void }) {
-  const items = keyFindings(results);
-  return (
-    <section className="card" aria-label="Key findings">
-      <h3 className="card-title">Key findings</h3>
-      {items.length === 0 ? (
-        <p className="empty-line"><IconCheck size={15} /> No significant findings across {results.length} checks.</p>
-      ) : (
-        <ul className="key-list">
-          {items.map(({ result, finding }, i) => (
-            <li key={i}>
-              <button className="key-item" onClick={() => onOpen(result.analyzer)}>
-                <span className={`sev-dot sev-${finding.severity}`} />
-                <span className="key-text"><b>{finding.title}</b><small>{result.title}</small></span>
-                <IconChevron size={15} />
-              </button>
-            </li>
-          ))}
+      {notes.length > 0 && (
+        <ul className="verdict-notes">
+          {notes.map((n) => <li key={n}><IconInfo size={13} /> {n}</li>)}
         </ul>
       )}
     </section>
   );
 }
 
+/** The significant findings; renders nothing when there are none (the check list says so instead). */
+export function KeyFindings({ results, onOpen }: { results: AnalyzerResult[]; onOpen: (name: string) => void }) {
+  const items = keyFindings(results);
+  if (items.length === 0) return null;
+  return (
+    <section className="card" aria-label="Key findings">
+      <h3 className="card-title">Key findings</h3>
+      <ul className="key-list">
+        {items.map(({ result, finding }, i) => (
+          <li key={i}>
+            <button className="key-item" onClick={() => onOpen(result.analyzer)}>
+              <span className={`sev-dot sev-${finding.severity}`} />
+              <span className="key-text"><b>{finding.title}</b><small>{result.title}</small></span>
+              <IconChevron size={15} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function CheckList({ results, onOpen }: { results: AnalyzerResult[]; onOpen: (name: string) => void }) {
+  const clear = keyFindings(results).length === 0;
   return (
     <section className="card checks" aria-label="Checks">
       <h3 className="card-title">Checks <span className="count">{results.length}</span></h3>
+      {clear && <p className="empty-line"><IconCheck size={15} /> No significant findings across {results.length} checks.</p>}
       <ul>
         {results.map((r) => {
           const tone = resultTone(r);

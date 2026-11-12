@@ -113,7 +113,12 @@ export function UploadPanel({ health, onStarted }: Props) {
       {health && !health.ffmpeg && (
         <div className="card error-box" role="alert">FFmpeg is not installed on the server: audio and video cannot be analysed.</div>
       )}
-      <p className="privacy"><IconShield size={14} /> Analysed on this machine · hashed, stored read-only and logged in a chain of custody</p>
+      <p className="privacy">
+        <IconShield size={14} />
+        {health?.auth_required
+          ? "Private workspace · files are hashed, sealed as evidence and deleted automatically"
+          : "Analysed on this machine · hashed, stored read-only and logged in a chain of custody"}
+      </p>
     </div>
   );
 }

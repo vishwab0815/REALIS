@@ -45,6 +45,9 @@ export const IconInfo = (p: IconProps) => (
 export const IconLayers = (p: IconProps) => (
   <svg {...base(p)}><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 13 9 5 9-5" /></svg>
 );
+export const IconExpand = (p: IconProps) => (
+  <svg {...base(p)}><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /></svg>
+);
 
 /** The REALIS mark: a lens with a check, "seeing what is real". */
 export const LogoMark = ({ size = 26 }: { size?: number }) => (
